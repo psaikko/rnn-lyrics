@@ -24,12 +24,13 @@ gpu_devices = tf.config.experimental.list_physical_devices('GPU')
 for device in gpu_devices: 
     tf.config.experimental.set_memory_growth(device, True)
 
-data_size = 1000
+data_size = 100
 batch_size = 256
 num_classes = 256
 timesteps = 100
 n_cells = 64
 epochs = 5
+rnn_layers = 2
 celltype = 'GRU'
 
 print("Creating training data")
@@ -63,17 +64,21 @@ def make_model(stateful=False):
     batch_input_shape = (1, 1) if stateful else (None, None)
     model = tf.keras.Sequential()
     model.add(onehot_embedding_layer(num_classes, batch_input_shape))
-    model.add({
-        'LSTM': layers.LSTM,
-        'GRU': layers.GRU,
-        'SIMPLE': layers.SimpleRNN
-    }[celltype](n_cells, return_sequences=False, stateful=stateful))
-    model.add(layers.Dense(num_classes, activation='softmax'))
-    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    for i in range(rnn_layers):
+        last_rnn_layer = (i == rnn_layers - 1)
+        model.add({
+            'LSTM': layers.LSTM,
+            'GRU': layers.GRU,
+            'SIMPLE': layers.SimpleRNN
+        }[celltype](n_cells, return_sequences=not last_rnn_layer, stateful=stateful))
+    model.add(layers.Dense(num_classes, activation='linear'))
+    loss = lambda labels, logits: \
+        tf.keras.losses.sparse_categorical_crossentropy(labels, logits, from_logits=True)
+    model.compile(optimizer='adam', loss=loss, metrics=['accuracy'])
     print("Model created")
     return model
 
-weights_filename = f"rnn-{GENRE}-{celltype}-{n_cells}-{timesteps}-{data_size}.npy"
+weights_filename = f"rnn-{GENRE}-{celltype}-{n_cells}-{rnn_layers}-{timesteps}-{data_size}x{epochs}.npy"
 predict_model = make_model(stateful=True)
 
 # load or compute model weight with current parameters
@@ -94,19 +99,17 @@ else:
 def encode(s):
     return to_ord(s)
 
+# https://www.tensorflow.org/tutorials/text/text_generation
 def sample_from(s, temperature=1):
-    s = np.array(s)
     s = np.divide(s, temperature)
-    s = scipy.special.softmax(s)
-    # Sample from distribution s
-    return chr(tf.random.categorical(tf.math.log(s), 1)[0][0].numpy())
+    return chr(tf.random.categorical(s, num_samples=1)[-1,0].numpy())
 
-# testing different "temperatures" for sampling
-for temp in np.geomspace(0.001, 0.05, 10):
-    text = "I"
+# testing different "temperatures" for sampling 
+for temp in np.geomspace(0.001, 0.1, 10):
+    text = "W"
     predict_model.reset_states()
     for i in range(100):
         pred = predict_model.predict(np.expand_dims(encode(text[-1]), axis=0))
         c = sample_from(pred, temperature=temp)
         text += c
-    print("Temp %.3f:" % temp, text[-101:].replace("\n", "\\n"))
+    print("Temp %.3f:" % temp, text)
