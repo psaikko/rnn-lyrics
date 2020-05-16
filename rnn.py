@@ -6,6 +6,7 @@ import scipy
 import sklearn.model_selection
 import tensorflow as tf
 import random
+import os
 from tensorflow.keras import layers
 
 data_filepath = "lyrics.csv"
@@ -56,21 +57,34 @@ model.add(layers.Dense(num_classes, activation='softmax'))
 model.summary()
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-history = model.fit(x=gen(X_train, y_train, batch_size), 
-                    epochs=1, 
-                    steps_per_epoch=len(y_train)//batch_size)
+weights_filename = f"rnn-{GENRE}-weights.npy"
 
-print(model.evaluate(x=gen(X_test, y_test, batch_size)))
+# load or compute state-transition matrix from dataset
+if os.path.exists(weights_filename):
+    wts = np.load(open(weights_filename, "rb"), allow_pickle=True)
+    model.set_weights(wts)
+else:
+    history = model.fit(x=gen(X_train, y_train, batch_size), 
+                        epochs=1, 
+                        steps_per_epoch=len(y_train)//batch_size)
+    np.save(open(weights_filename, "wb"), model.get_weights())
+
+    print(model.evaluate(x=gen(X_test, y_test, batch_size)))
 
 def encode(s):
     return tf.keras.utils.to_categorical(to_ord(s), num_classes=num_classes)
 
-def decode(s):
-    return chr(np.argmax(s, axis=-1))
+def sample_from(s, temperature=1):
+    s = np.array(s)
+    s = np.divide(s, temperature)
+    s = scipy.special.softmax(s)
+    # Sample from distribution s
+    return chr(tf.random.categorical(tf.math.log(s), 1)[0][0].numpy())
 
 text = "I"
-for i in range(100):
-    pred = model.predict(tf.convert_to_tensor(np.expand_dims(encode(text[-timesteps:]), axis=0)))
-    c = decode(pred)
-    text += c
-    print(text)
+for i in range(10):
+    for i in range(100):
+        pred = model.predict(tf.convert_to_tensor(np.expand_dims(encode(text[-timesteps:]), axis=0)))
+        c = sample_from(pred, temperature=0.02)
+        text += c
+    print(text[-100:])
