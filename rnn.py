@@ -19,7 +19,8 @@ genre_lyrics = genre_df.lyrics.values
 print("Songs", len(genre_lyrics))
 print("Characters", sum(map(len, genre_lyrics)))
 
-batch_size = 128
+data_size = 200
+batch_size = 32
 num_classes = 256
 timesteps = 10
 units = 128
@@ -27,7 +28,7 @@ units = 128
 X = []
 y = []
 # predicting (timesteps+1):th character from characters at 1..timesteps
-for song in genre_lyrics[:1000]:
+for song in genre_lyrics[:data_size]:
     for i in range(len(song) - timesteps):
         X += [song[i:i+timesteps]]
         y += [song[i+timesteps]]
@@ -39,40 +40,34 @@ y = to_ord(y)
 
 X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(X, y, test_size=0.1)
 
-def gen(xs, ys, batch_size):
-    pair_gen = zip(xs, ys)
-    while True:
-        x_batch = np.zeros((batch_size, timesteps, num_classes)) 
-        y_batch = np.zeros((batch_size, num_classes))
-        for i in range(batch_size):
-            x, y = next(pair_gen)
-            y_batch[i,:] = tf.keras.utils.to_categorical([y], num_classes=num_classes)
-            x_batch[i,:,:] = tf.keras.utils.to_categorical(x, num_classes=num_classes)
-
-        yield (x_batch, y_batch)
+def onehot_embedding_layer(n_classes):
+    lookup_mat = tf.keras.utils.to_categorical(range(n_classes), n_classes)
+    onehot_embed_weights = tf.keras.initializers.Constant(lookup_mat)
+    return layers.Embedding(n_classes, n_classes, embeddings_initializer=onehot_embed_weights, trainable=False)
 
 model = tf.keras.Sequential()
+model.add(onehot_embedding_layer(num_classes))
 model.add(layers.SimpleRNN(units, input_dim=num_classes, return_sequences=False, stateful=False))
 model.add(layers.Dense(num_classes, activation='softmax'))
 model.summary()
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
-weights_filename = f"rnn-{GENRE}-weights.npy"
+weights_filename = f"rnn-{GENRE}-{timesteps}-{data_size}.npy"
 
-# load or compute state-transition matrix from dataset
+# load or compute model weight with current parameters
 if os.path.exists(weights_filename):
     wts = np.load(open(weights_filename, "rb"), allow_pickle=True)
     model.set_weights(wts)
 else:
-    history = model.fit(x=gen(X_train, y_train, batch_size), 
+    history = model.fit(X_train, y_train, 
+                        batch_size=batch_size,
                         epochs=1, 
-                        steps_per_epoch=len(y_train)//batch_size)
+                        steps_per_epoch=len(y_train)//batch_size,
+                        validation_data=(X_test, y_test))                        
     np.save(open(weights_filename, "wb"), model.get_weights())
 
-    print(model.evaluate(x=gen(X_test, y_test, batch_size)))
-
 def encode(s):
-    return tf.keras.utils.to_categorical(to_ord(s), num_classes=num_classes)
+    return to_ord(s)
 
 def sample_from(s, temperature=1):
     s = np.array(s)
@@ -81,10 +76,11 @@ def sample_from(s, temperature=1):
     # Sample from distribution s
     return chr(tf.random.categorical(tf.math.log(s), 1)[0][0].numpy())
 
-text = "I"
-for i in range(10):
+# testing different "temperatures" for sampling
+for temp in np.geomspace(0.001, 0.05, 10):
+    text = "I"
     for i in range(100):
-        pred = model.predict(tf.convert_to_tensor(np.expand_dims(encode(text[-timesteps:]), axis=0)))
-        c = sample_from(pred, temperature=0.02)
+        pred = model.predict(np.expand_dims(encode(text[-timesteps:]), axis=0))
+        c = sample_from(pred, temperature=temp)
         text += c
-    print(text[-100:])
+    print("Temp %.3f: " % temp, text[-101:].replace("\n", "\\n"))
