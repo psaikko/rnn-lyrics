@@ -19,12 +19,20 @@ genre_lyrics = genre_df.lyrics.values
 print("Songs", len(genre_lyrics))
 print("Characters", sum(map(len, genre_lyrics)))
 
-data_size = 200
-batch_size = 32
-num_classes = 256
-timesteps = 10
-units = 128
+# https://github.com/tensorflow/tensorflow/issues/24496#issuecomment-595467618
+gpu_devices = tf.config.experimental.list_physical_devices('GPU') 
+for device in gpu_devices: 
+    tf.config.experimental.set_memory_growth(device, True)
 
+data_size = 1000
+batch_size = 256
+num_classes = 256
+timesteps = 100
+n_cells = 64
+epochs = 5
+celltype = 'GRU'
+
+print("Creating training data")
 X = []
 y = []
 # predicting (timesteps+1):th character from characters at 1..timesteps
@@ -35,10 +43,15 @@ for song in genre_lyrics[:data_size]:
 
 # char -> int
 to_ord = lambda s: list(map(ord, s))
-X = list(map(to_ord, X))
-y = to_ord(y)
+X = np.stack([np.array(x) for x in map(to_ord, X)], axis=0)
+y = np.array(to_ord(y))
 
 X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(X, y, test_size=0.1)
+
+print(X_train.shape)
+print(y_train.shape)
+
+print("Data created")
 
 def onehot_embedding_layer(n_classes, batch_input_shape):
     lookup_mat = tf.keras.utils.to_categorical(range(n_classes), n_classes)
@@ -46,17 +59,21 @@ def onehot_embedding_layer(n_classes, batch_input_shape):
     return layers.Embedding(n_classes, n_classes, embeddings_initializer=onehot_embed_weights, trainable=False, batch_input_shape=batch_input_shape)
 
 def make_model(stateful=False):
-    batch_input_shape = (batch_size, timesteps) if stateful else (None, None)
-
+    print("Creating model")
+    batch_input_shape = (1, 1) if stateful else (None, None)
     model = tf.keras.Sequential()
     model.add(onehot_embedding_layer(num_classes, batch_input_shape))
-    model.add(layers.SimpleRNN(units, return_sequences=False, stateful=stateful))
+    model.add({
+        'LSTM': layers.LSTM,
+        'GRU': layers.GRU,
+        'SIMPLE': layers.SimpleRNN
+    }[celltype](n_cells, return_sequences=False, stateful=stateful))
     model.add(layers.Dense(num_classes, activation='softmax'))
     model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    print("Model created")
     return model
 
-weights_filename = f"rnn-{GENRE}-{timesteps}-{data_size}.npy"
-
+weights_filename = f"rnn-{GENRE}-{celltype}-{n_cells}-{timesteps}-{data_size}.npy"
 predict_model = make_model(stateful=True)
 
 # load or compute model weight with current parameters
@@ -67,7 +84,7 @@ else:
     train_model = make_model(stateful=False)
     history = train_model.fit(X_train, y_train, 
                             batch_size=batch_size,
-                            epochs=1, 
+                            epochs=epochs, 
                             steps_per_epoch=len(y_train)//batch_size,
                             validation_data=(X_test, y_test)) 
     trained_weights = train_model.get_weights()
@@ -92,4 +109,4 @@ for temp in np.geomspace(0.001, 0.05, 10):
         pred = predict_model.predict(np.expand_dims(encode(text[-1]), axis=0))
         c = sample_from(pred, temperature=temp)
         text += c
-    print("Temp %.3f: " % temp, text[-101:].replace("\n", "\\n"))
+    print("Temp %.3f:" % temp, text[-101:].replace("\n", "\\n"))
