@@ -7,3 +7,4 @@ tensorflow
 tensorflow-gpu
 efficientnet
 spacy
+pycld2

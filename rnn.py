@@ -7,33 +7,76 @@ import sklearn.model_selection
 import tensorflow as tf
 import random
 import os
+import pycld2 as cld2
+import unicodedata
 from tensorflow.keras import layers
 
 data_filepath = "lyrics.csv"
 lyrics_df = pd.read_csv(data_filepath)
 GENRE = "Hip-Hop"
 print(lyrics_df["genre"].unique())
+
 genre_df = lyrics_df[lyrics_df.genre == GENRE]
+
+print("Dropping", len(genre_df[genre_df["lyrics"].isnull()]), "missing lyrics")
 genre_df = genre_df.dropna(subset=["lyrics"])
+genre_df["len"] = genre_df["lyrics"].apply(len)
+print("Dropping", len(genre_df[genre_df["len"] < 1000]), "short lyrics")
+genre_df = genre_df[genre_df["len"] >= 1000]
+
+def fix_encoding(s):
+    # Common character combinations in badly encoded latin-1
+    latin_1_garbage = ["Ã¤","Ã©", "Ã¼", "Ã¬", "Ã±", "Ãª", "Ãº", "Î¼", 
+        "â\x80", "Ç\x90", "Ã\x9c", "Å¾", "Ä\x8d", "Ã\x86", "Ã¹", "Ã²", "Ã¨",
+        "Ã®", "Ã¢", "Å\x9f" ,"Ä\x83" ,"Å\x9f", "Å\x9b","Å\x82","Å\x9b", "Ã¥", "Ñ\x81", "Ã\x89"]
+    for g in latin_1_garbage:
+        if g in s:
+            try:
+                s = bytearray(s, 'latin-1').decode('utf-8')
+            except:
+                return None
+            break
+    # Remove / replace remaining unicode characters
+    s = s.translate(str.maketrans('\u2028—\x84', '\n-"', "\u200b\x7f\x98\x9d\x90\x82\x18"))
+    return s
+
+def detect_language(s):
+    try:
+        _,_,res = cld2.detect(s)
+        return res[0][1]
+    except:
+        return None
+
+print("Fixing encodings")
+genre_df["lyrics"] = genre_df["lyrics"].apply(fix_encoding)
+print("Dropping", len(genre_df[genre_df["lyrics"].isnull()]), "unrecoverable")
+genre_df = genre_df.dropna(subset=["lyrics"])
+
+print("Detecting languages")
+genre_df["lang"] = genre_df["lyrics"].apply(detect_language)
+print("Could not detect on", len(genre_df[genre_df["lang"].isnull()]))
+print("Dropping", len(genre_df[genre_df["lang"] != "en"]), "not detected as English")
+genre_df = genre_df[genre_df["lang"] == "en"]
+
 genre_lyrics = genre_df.lyrics.values
-print("Songs", len(genre_lyrics))
-print("Characters", sum(map(len, genre_lyrics)))
+print("Songs left", len(genre_lyrics))
+print("Total size", sum(map(len, genre_lyrics)))
 
 # https://github.com/tensorflow/tensorflow/issues/24496#issuecomment-595467618
 gpu_devices = tf.config.experimental.list_physical_devices('GPU') 
 for device in gpu_devices: 
     tf.config.experimental.set_memory_growth(device, True)
 
-data_size = 1500
+data_size = 500
 batch_size = 256
 num_classes = 256
 timesteps = 100
 n_cells = 64
-epochs = 20
+epochs = 2
 rnn_layers = 2
 celltype = 'GRU'
 
-print("Creating training data")
+print("Creating training slices")
 X = []
 y = []
 # predicting (timesteps+1):th character from characters at 1..timesteps
