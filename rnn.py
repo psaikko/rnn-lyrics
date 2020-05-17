@@ -24,12 +24,12 @@ gpu_devices = tf.config.experimental.list_physical_devices('GPU')
 for device in gpu_devices: 
     tf.config.experimental.set_memory_growth(device, True)
 
-data_size = 100
+data_size = 1500
 batch_size = 256
 num_classes = 256
 timesteps = 100
 n_cells = 64
-epochs = 5
+epochs = 20
 rnn_layers = 2
 celltype = 'GRU'
 
@@ -47,7 +47,7 @@ to_ord = lambda s: list(map(ord, s))
 X = np.stack([np.array(x) for x in map(to_ord, X)], axis=0)
 y = np.array(to_ord(y))
 
-X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(X, y, test_size=0.1)
+X_train, X_test, y_train, y_test = sklearn.model_selection.train_test_split(X, y, test_size=0.1, shuffle=True)
 
 print(X_train.shape)
 print(y_train.shape)
@@ -72,9 +72,18 @@ def make_model(stateful=False):
             'SIMPLE': layers.SimpleRNN
         }[celltype](n_cells, return_sequences=not last_rnn_layer, stateful=stateful))
     model.add(layers.Dense(num_classes, activation='linear'))
+
     loss = lambda labels, logits: \
         tf.keras.losses.sparse_categorical_crossentropy(labels, logits, from_logits=True)
-    model.compile(optimizer='adam', loss=loss, metrics=['accuracy'])
+
+    initial_learning_rate = 0.001
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate,
+        decay_steps=10000,
+        decay_rate=0.95)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+
+    model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
     print("Model created")
     return model
 
@@ -105,11 +114,11 @@ def sample_from(s, temperature=1):
     return chr(tf.random.categorical(s, num_samples=1)[-1,0].numpy())
 
 # testing different "temperatures" for sampling 
-for temp in np.geomspace(0.001, 0.1, 10):
+for temp in np.geomspace(0.001, 1, 10):
     text = "W"
     predict_model.reset_states()
-    for i in range(100):
-        pred = predict_model.predict(np.expand_dims(encode(text[-1]), axis=0))
-        c = sample_from(pred, temperature=temp)
+    for i in range(200):
+        logits = predict_model.predict(np.expand_dims(encode(text[-1]), axis=0))
+        c = sample_from(logits, temperature=temp)
         text += c
     print("Temp %.3f:" % temp, text)
