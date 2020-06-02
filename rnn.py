@@ -13,7 +13,7 @@ from tensorflow.keras import layers
 
 data_filepath = "lyrics.csv"
 lyrics_df = pd.read_csv(data_filepath)
-GENRE = "Hip-Hop"
+GENRE = "Country"
 print(lyrics_df["genre"].unique())
 
 genre_df = lyrics_df[lyrics_df.genre == GENRE]
@@ -119,18 +119,14 @@ def make_model(stateful=False):
     loss = lambda labels, logits: \
         tf.keras.losses.sparse_categorical_crossentropy(labels, logits, from_logits=True)
 
-    initial_learning_rate = 0.001
-    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-        initial_learning_rate,
-        decay_steps=10000,
-        decay_rate=0.95)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
-    model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
+    model.compile(optimizer=optimizer, loss=loss, metrics=['sparse_categorical_accuracy'])
     print("Model created")
     return model
 
 weights_filename = f"rnn-{GENRE}-{celltype}-{n_cells}-{rnn_layers}-{timesteps}-{data_size}x{epochs}.npy"
+
 predict_model = make_model(stateful=True)
 
 # load or compute model weight with current parameters
@@ -139,11 +135,14 @@ if os.path.exists(weights_filename):
     predict_model.set_weights(wts)
 else:
     train_model = make_model(stateful=False)
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.5, patience=1, verbose=1, min_lr=0.00001)
     history = train_model.fit(X_train, y_train, 
                             batch_size=batch_size,
                             epochs=epochs, 
                             steps_per_epoch=len(y_train)//batch_size,
-                            validation_data=(X_test, y_test)) 
+                            validation_data=(X_test, y_test),
+                            callbacks=[reduce_lr])
     trained_weights = train_model.get_weights()
     np.save(open(weights_filename, "wb"), trained_weights)
     predict_model.set_weights(trained_weights)
