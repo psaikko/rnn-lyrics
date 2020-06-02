@@ -8,8 +8,8 @@ import tensorflow as tf
 import random
 import os
 import pycld2 as cld2
-import unicodedata
 from tensorflow.keras import layers
+import tensorflowjs as tfjs
 
 data_filepath = "lyrics.csv"
 lyrics_df = pd.read_csv(data_filepath)
@@ -74,7 +74,7 @@ timesteps = 100
 n_cells = 64
 epochs = 2
 rnn_layers = 2
-celltype = 'GRU'
+celltype = 'SIMPLE'
 
 print("Creating training slices")
 X = []
@@ -143,6 +143,8 @@ else:
                             steps_per_epoch=len(y_train)//batch_size,
                             validation_data=(X_test, y_test),
                             callbacks=[reduce_lr])
+    # save for web
+    tfjs.converters.save_keras_model(train_model, 'web/rnn_weights')
     trained_weights = train_model.get_weights()
     np.save(open(weights_filename, "wb"), trained_weights)
     predict_model.set_weights(trained_weights)
