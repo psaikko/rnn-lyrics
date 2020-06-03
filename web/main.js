@@ -1,5 +1,5 @@
-const num_classes = 256
-const temperature = 0.2
+const num_classes = 256;
+const temperature = 0.2;
 const ord = c => c.charCodeAt(0);
 const chr = i => String.fromCharCode(i);
 
@@ -9,29 +9,41 @@ function from_onehot(array) {
 }
 
 function sample_from_logits(logits) {
-    return tf.multinomial(logits.map(x => x/temperature), 1).arraySync()[0]
+    return tf.multinomial(logits.map(x => x/temperature), 1).arraySync()[0];
 }
 
-const outputDiv = document.getElementById("outputDiv");
+const txtLyrics = document.getElementById("txtLyrics");
+const btnGenerate = document.getElementById("btnGenerate");
+let rnn_model
 
-async function run_demo(model) {
-    model.summary()
-
+async function run_demo() {
     // seed text
-    s = "Who let the dogs".split()
-
+    s = txtLyrics.value.split('');
+    if (s.length === 0) {
+        alert("Enter some starting text");
+        return;
+    }
+    
     for (let i = 0; i < 500; ++i) {
         // Wrap the input in a tensor
         let input = tf.tensor1d(s.map(ord));
         // Expand batch dimension and predict
-        let res = model.predict(input.expandDims(0));
+        let res = rnn_model.predict(input.expandDims(0));
         let output = await res.array();
 
         let out_chr = chr(sample_from_logits(output[0]));
         
         s.push(out_chr);
-        outputDiv.innerText = s.join("");
+        txtLyrics.value = s.join("");
     }
 } 
 
-tf.loadLayersModel('./rnn_weights/model.json').then(run_demo);
+function onload(model) {
+    model.summary();
+    rnn_model = model;
+    btnGenerate.value = "Generate";
+    btnGenerate.disabled = false;
+    btnGenerate.onclick = run_demo;
+}
+
+tf.loadLayersModel('./rnn_weights/model.json').then(model => onload(model));
