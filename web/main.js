@@ -1,5 +1,5 @@
 const num_classes = 256
-const temperature = 0.3
+const temperature = 0.2
 const ord = c => c.charCodeAt(0);
 const chr = i => String.fromCharCode(i);
 
@@ -18,9 +18,9 @@ async function run_demo(model) {
     model.summary()
 
     // seed text
-    s = ["Who"]
+    s = "Who let the dogs".split()
 
-    for (let i = 0; i < 100; ++i) {
+    for (let i = 0; i < 500; ++i) {
         // Wrap the input in a tensor
         let input = tf.tensor1d(s.map(ord));
         // Expand batch dimension and predict
