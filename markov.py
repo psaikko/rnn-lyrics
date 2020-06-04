@@ -3,32 +3,19 @@ import numpy as np
 import random as rand
 import sys
 import os
-
-data_filepath = "lyrics.csv"
-
-if not os.path.exists(data_filepath):
-    print("Missing dataset:",data_filepath)
-    exit(1)
-lyrics_df = pd.read_csv(data_filepath)
+import dataset
 
 if len(sys.argv) < 3:
     print("Missing required params!")
     print(sys.argv[0] + "[GENRE] [M]")
-    print("GENRE: one of")
-    print(lyrics_df["genre"].unique())
+    print("GENRE: one of ['Pop' 'Hip-Hop' 'Not Available' 'Other' 'Rock' 'Metal' 'Country' 'Jazz' 'Electronic' 'Folk' 'R&B' 'Indie']")
     print("M: number of state transition matrix dimensions")
     exit(1)
 
-GENRE = sys.argv[1]
+genre = sys.argv[1]
 M = int(sys.argv[2])
 
-if GENRE not in lyrics_df["genre"].unique():
-    print("Unrecognized genre", GENRE)
-    exit(1)
-
-genre_df = lyrics_df[lyrics_df.genre == GENRE]
-genre_df = genre_df.dropna(subset=["lyrics"])
-genre_lyrics = genre_df.lyrics.values
+genre_lyrics = dataset.load_genre_lyrics(genre)
 
 print("Songs", len(genre_lyrics))
 print("Characters", sum(map(len, genre_lyrics)))
@@ -54,7 +41,7 @@ def postprocess(indices):
 
 n_chars = len(allowed_chars)
 
-filename = f"{GENRE}-{M}.npy"
+filename = f"{genre}-{M}.npy"
 
 # load or compute state-transition matrix from dataset
 if os.path.exists(filename):

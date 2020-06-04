@@ -3,3 +3,4 @@
 *.npy
 *.zip
 env
+__pycache__
