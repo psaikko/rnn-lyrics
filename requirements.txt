@@ -4,7 +4,7 @@ pandas
 scikit-learn
 matplotlib
 tensorflow==2.1.0
-tensorflow-gpu==2.1.0
+tensorflow-gpu==2.9.3
 efficientnet
 spacy
 pycld2
